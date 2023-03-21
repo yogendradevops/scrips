@@ -1,0 +1,79 @@
+mkdir ~/replication && cd ~/replication && mkdir master1 && mkdir master2
+
+podman run -d --name master1  -e MYSQL_ROOT_PASSWORD=redhat mysql/mysql-server:latest
+
+podman cp master1:/etc/my.cnf .
+
+cp my.cnf master1 && cp my.cnf master2
+
+sudo apt install mysql-client -y
+
+podman network create --subnet 192.168.1.0/24  mysqlnetwork
+
+podman run -d --name master1 -p 3307:3306 --network mysqlnetwork --ip 192.168.1.11 -v ~/replication/master1/my.cnf:/etc/my.cnf -e MYSQL_ROOT_PASSWORD=redhat mysql/mysql
+
+podman run -d --name master2 -p 3308:3306 --network mysqlnetwork --ip 192.168.1.12 -v ~/replication/master2/my.cnf:/etc/my.cnf -e MYSQL_ROOT_PASSWORD=redhat mysql/mysql
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
++++++++++++Configuration master1+++++++++++++++
+vim ~/replication/master1/my.cnf
+
+[mysqld]
+bind-address = 192.168.1.11              ####ip of master1 server
+server-id = 1
+log-bin=/var/lib/mysql/master1-bin
+
++++++++++++Configuration master2+++++++++++++++
+
+vim ~/replication/master1/my.cnf
+
+[mysqld]
+bind-address = 192.168.1.12     ####ip of master2 server
+server-id = 2
+log-bin=/var/lib/mysql/master2-bin
+
+
+========================Master1=========================================
+mysql -u root -p -h 127.0.0.1 -P 3307
+
+CREATE USER 'negi'@'192.168.1.12' IDENTIFIED BY 'Redhat@1234';        ### give ip of master2
+
+GRANT REPLICATION SLAVE ON *.* TO 'keen'@'192.168.1.12';
+
+SHOW MASTER STATUS\G
+
+
+==========================Master2======================================
+mysql -u root -p redhat -h 127.0.0.1 -P 3308
+
+STOP SLAVE;
+
+RESET SLAVE;
+
+CHANGE MASTER TO MASTER_HOST ='192.168.1.11', MASTER_USER ='negi', MASTER_PASSWORD ='Redhat@1234', MASTER_LOG_FILE = 'master1-bin.000002', MASTER_LOG_POS = 703;         ####give ip of master1
+
+start slave;
+
+show slave status\G
+
+SHOW MASTER STATUS\G
+
+=========================Master1=========================================
+
+mysql -u root -p redhat -h 127.0.0.1 -P 3307
+
+STOP SLAVE;
+
+RESET SLAVE;
+
+CHANGE MASTER TO MASTER_HOST ='192.168.1.12', MASTER_USER ='keen', MASTER_PASSWORD ='Redhat@1234', MASTER_LOG_FILE = 'mysql-bin.000001', MASTER_LOG_POS = 1026;         ####give ip of master2
+
+start slave;
+
+show slave status\G
+
+
+
